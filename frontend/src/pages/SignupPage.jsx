@@ -5,12 +5,15 @@ import { Link } from "react-router-dom";
 import AuthImagePattern from '../Components/AuthImagePattern';
 import toast from 'react-hot-toast';
 
-// Get API base from env variables or fallback to localhost
+// Base URL for your API (from environment variables or fallback)
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5001/api/auth';
 
 const SignupPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isOtpSent, setIsOtpSent] = useState(false);
+  const [otpToken, setOtpToken] = useState(null); // store the OTP JWT returned from backend
+  const [loadingSendOtp, setLoadingSendOtp] = useState(false);
+  const [loadingVerifyOtp, setLoadingVerifyOtp] = useState(false);
   const [otp, setOtp] = useState(new Array(6).fill(''));
   const [formData, setFormData] = useState({
     fullName: "",
@@ -19,7 +22,6 @@ const SignupPage = () => {
   });
   const { signup, isSigningUp } = useAuthStore();
 
-  // Validate form data
   const validateData = () => {
     if (!formData.fullName.trim()) {
       toast.error("Full name is required");
@@ -45,61 +47,76 @@ const SignupPage = () => {
     return true;
   };
 
-  // Send OTP to backend using the correct API base URL
+  // Sends OTP to the provided email and stores otpToken from backend
   const handleSendOtp = async (e) => {
     e.preventDefault();
     if (!validateData()) return;
+    setLoadingSendOtp(true);
     try {
       const response = await fetch(`${API_BASE}/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: formData.email })
+        body: JSON.stringify({ email: formData.email }),
       });
+      const data = await response.json();
       if (response.ok) {
         toast.success("OTP sent to your email!");
         setIsOtpSent(true);
+        // Save the otpToken returned from backend
+        setOtpToken(data.otpToken);
       } else {
-        toast.error("Failed to send OTP. Please try again.");
+        toast.error(data.message || "Failed to send OTP. Please try again.");
       }
     } catch (error) {
       toast.error("Error sending OTP. Please try again.");
+    } finally {
+      setLoadingSendOtp(false);
     }
   };
 
-  // Handle OTP input changes
+  // Handles OTP input changes and auto-focuses the next input
   const handleOtpChange = (element, index) => {
     if (isNaN(element.value)) return;
     const newOtp = [...otp];
     newOtp[index] = element.value;
     setOtp(newOtp);
-    // Automatically focus the next input if available
     if (element.value !== "" && element.nextSibling) {
       element.nextSibling.focus();
     }
   };
 
-  // Verify OTP and complete signup
+  // Verifies the entered OTP along with the otpToken then proceeds with signup if valid
   const handleVerifyOtp = async (e) => {
     e.preventDefault();
     const enteredOtp = otp.join('');
     if (enteredOtp.length !== 6) {
       return toast.error("Please enter a valid 6-digit OTP");
     }
+    if (!otpToken) {
+      return toast.error("OTP token is missing. Please request a new OTP.");
+    }
+    setLoadingVerifyOtp(true);
     try {
       const response = await fetch(`${API_BASE}/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: formData.email, otp: enteredOtp })
+        body: JSON.stringify({ 
+          email: formData.email, 
+          otp: enteredOtp, 
+          otpToken 
+        }),
       });
+      const data = await response.json();
       if (response.ok) {
         toast.success("OTP verified successfully!");
-        // Proceed with signup after OTP verification
         signupUser();
       } else {
-        toast.error("Invalid OTP. Please try again.");
+        toast.error(data.message || "Invalid OTP. Please try again.");
       }
     } catch (error) {
       toast.error("Error verifying OTP. Please try again.");
+    } finally {
+      setLoadingVerifyOtp(false);
     }
   };
 
@@ -110,10 +127,9 @@ const SignupPage = () => {
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
-      {/* Left Side: Signup form or OTP verification */}
+      {/* Left Side: Signup form / OTP verification */}
       <div className="flex flex-col justify-center items-center p-6 sm:p-12">
         <div className="w-full max-w-md space-y-8">
-          {/* Header */}
           <div className="text-center mb-8">
             <div className="flex flex-col items-center gap-2 group">
               <div className="size-12 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
@@ -124,7 +140,6 @@ const SignupPage = () => {
             </div>
           </div>
 
-          {/* Render signup form if OTP is not sent, else render OTP verification */}
           {!isOtpSent ? (
             <form onSubmit={handleSendOtp} className="space-y-6">
               {/* Full Name */}
@@ -142,9 +157,7 @@ const SignupPage = () => {
                     placeholder="John Doe"
                     autoComplete="name"
                     value={formData.fullName}
-                    onChange={(e) =>
-                      setFormData({ ...formData, fullName: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, fullName: e.target.value })}
                   />
                 </div>
               </div>
@@ -163,9 +176,7 @@ const SignupPage = () => {
                     placeholder="your@example.com"
                     autoComplete="email"
                     value={formData.email}
-                    onChange={(e) =>
-                      setFormData({ ...formData, email: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   />
                 </div>
               </div>
@@ -179,14 +190,12 @@ const SignupPage = () => {
                     <Lock className="size-5 text-base-content/40" />
                   </div>
                   <input
-                    type={!showPassword ? 'password' : 'text'}
+                    type={showPassword ? 'text' : 'password'}
                     className="input input-bordered w-full pl-10"
                     placeholder="●●●●●●●●●"
                     autoComplete="current-password"
                     value={formData.password}
-                    onChange={(e) =>
-                      setFormData({ ...formData, password: e.target.value })
-                    }
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
                   />
                   <button
                     type="button"
@@ -201,11 +210,11 @@ const SignupPage = () => {
                   </button>
                 </div>
               </div>
-              <button type="submit" className="btn btn-primary w-full hover:translate-y-2" disabled={isSigningUp}>
-                {isSigningUp ? (
+              <button type="submit" className="btn btn-primary w-full hover:translate-y-2" disabled={loadingSendOtp}>
+                {loadingSendOtp ? (
                   <>
-                    <Loader2 className="size-5 animate-spin" />
-                    Loading..
+                    <Loader2 className="size-5 animate-spin mr-2" />
+                    Sending OTP...
                   </>
                 ) : (
                   "Send OTP"
@@ -221,13 +230,10 @@ const SignupPage = () => {
               </div>
             </form>
           ) : (
-            // OTP Verification Form
             <form onSubmit={handleVerifyOtp} className="space-y-6">
               <div className="text-center">
                 <h2 className="text-2xl font-bold">Enter OTP</h2>
-                <p className="text-base-content/60">
-                  A 6‑digit OTP has been sent to {formData.email}
-                </p>
+                <p className="text-base-content/60">A 6‑digit OTP has been sent to {formData.email}</p>
               </div>
               <div className="flex justify-center space-x-2">
                 {otp.map((data, index) => (
@@ -242,14 +248,20 @@ const SignupPage = () => {
                   />
                 ))}
               </div>
-              <button type="submit" className="btn btn-primary w-full hover:translate-y-2">
-                Verify OTP &amp; Signup
+              <button type="submit" className="btn btn-primary w-full hover:translate-y-2" disabled={loadingVerifyOtp}>
+                {loadingVerifyOtp ? (
+                  <>
+                    <Loader2 className="size-5 animate-spin mr-2" />
+                    Verifying OTP...
+                  </>
+                ) : (
+                  "Verify OTP & Signup"
+                )}
               </button>
             </form>
           )}
         </div>
       </div>
-      {/* Right Side: Decorative Pattern/Image */}
       <AuthImagePattern
         title="Join our community"
         subtitle="Connect with friends, share moments, and stay in touch with your loved ones."
