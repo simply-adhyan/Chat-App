@@ -9,8 +9,10 @@ import bodyParser from "body-parser";
 import { connectDB } from './lib/db.js';
 import { app, server } from './lib/socket.js';
 
-
+import path from "path";
 // const app= express(); //delete
+
+const __dirname = path.resolve();
 
 app.use(express.json({ limit: "50mb" })); 
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
@@ -35,6 +37,14 @@ app.use("/api/messages",messageRoutes);
 
 const port = process.env.PORT
 
+
+if(process.env.NODE_ENV==="production"){
+    app.use(express.static(path.join(__dirname,"../frontend/dist")))
+    app.get("*", (req, res) => {
+        res.sendFile(path.join(__dirname, "../frontend", "dist", "index.html"));
+    });
+}
+    
 server.listen(port,()=>{
     console.log("server is running on the PORT: "+port);
     connectDB()
