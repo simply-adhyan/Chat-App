@@ -14,8 +14,10 @@ import {Toaster} from "react-hot-toast";
 import { useThemeStore } from './store/useThemeStore.js';
 
 const App = () => {
-	const {authUser,checkAuth,isCheckingAuth} = useAuthStore();
+	const {authUser,checkAuth,isCheckingAuth,onlineUsers} = useAuthStore();
 	const {theme} = useThemeStore();
+
+	console.log(onlineUsers)
 	useEffect(()=> {
 		checkAuth()
 	},[checkAuth])
