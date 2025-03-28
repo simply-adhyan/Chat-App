@@ -19,7 +19,7 @@ dist-ssr
 # .env
 # or use **/.env if you have multiple env files
 **/.env
-
+**/tools
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
