@@ -1,22 +1,29 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import { useChatStore } from "../store/useChatStore";
-import { Image, Send, X, MapPin } from "lucide-react";
+import { Image, Send, Trash2, MapPin, Mic, StopCircle } from "lucide-react";
 import toast from "react-hot-toast";
 
 const MessageInput = () => {
   const [text, setText] = useState("");
   const [imagePreview, setImagePreview] = useState(null);
-  const [location, setLocation] = useState(null); // New state for location
+  const [location, setLocation] = useState(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [audioBlob, setAudioBlob] = useState(null);
+  const [audioUrl, setAudioUrl] = useState(null);
+
   const fileInputRef = useRef(null);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const streamRef = useRef(null); // New ref to store the stream
   const { sendMessage } = useChatStore();
 
+  // Handle Image Change
   const handleImageChange = (e) => {
     const file = e.target.files[0];
     if (!file.type.startsWith("image/")) {
       toast.error("Please select an image file");
       return;
     }
-
     const reader = new FileReader();
     reader.onloadend = () => {
       setImagePreview(reader.result);
@@ -29,24 +36,23 @@ const MessageInput = () => {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
-  // New function to handle location sharing
+  // Handle Location Sharing
   const handleShareLocation = () => {
     if (!navigator.geolocation) {
       toast.error("Geolocation is not supported by your browser");
       return;
     }
-
     navigator.geolocation.getCurrentPosition(
       (position) => {
         const { latitude, longitude } = position.coords;
-        // Here you could use a reverse geocoding API to get an address (free options available), but for now we use coordinates only
         setLocation({ latitude, longitude, address: "" });
         toast.success("Location shared successfully");
       },
       (error) => {
         toast.error("Unable to retrieve location");
         console.error("Error getting location:", error);
-      }
+      },
+      { enableHighAccuracy: true }
     );
   };
 
@@ -54,21 +60,92 @@ const MessageInput = () => {
     setLocation(null);
   };
 
+  // Handle Audio Recording using MediaRecorder API
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream; // Save the stream reference
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = () => {
+        const blob = new Blob(audioChunksRef.current, { type: "audio/mp3" });
+        setAudioBlob(blob);
+        const url = URL.createObjectURL(blob);
+        setAudioUrl(url);
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      toast.success("Recording started");
+    } catch (error) {
+      console.error("Error starting audio recording", error);
+      toast.error("Could not start recording");
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop();
+      // Stop all tracks of the stream to turn off the mic
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+      }
+      setIsRecording(false);
+      toast.success("Recording stopped");
+    }
+  };
+
+  const removeAudio = () => {
+    setAudioBlob(null);
+    setAudioUrl(null);
+  };
+
+  // Ensure recording stops if the component unmounts
+  useEffect(() => {
+    return () => {
+      if (mediaRecorderRef.current && isRecording) {
+        mediaRecorderRef.current.stop();
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach((track) => track.stop());
+        }
+      }
+    };
+  }, [isRecording]);
+
   const handleSendMessage = async (e) => {
     e.preventDefault();
-    if (!text.trim() && !imagePreview && !location) return;
+    if (!text.trim() && !imagePreview && !location && !audioBlob) return;
+
+    let audioData = null;
+    if (audioBlob) {
+      // Convert audio blob to base64 string for sending
+      audioData = await new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(audioBlob);
+      });
+    }
 
     try {
       await sendMessage({
         text: text.trim(),
         image: imagePreview,
-        location, // include location data if available
+        location,
+        audio: audioData,
       });
 
       // Clear form
       setText("");
       setImagePreview(null);
       setLocation(null);
+      removeAudio();
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (error) {
       console.error("Failed to send message:", error);
@@ -77,40 +154,64 @@ const MessageInput = () => {
 
   return (
     <div className="p-4 w-full">
-      {/* Preview for Image */}
+      {/* Image Preview */}
       {imagePreview && (
-        <div className="mb-3 flex items-center gap-2">
-          <div className="relative">
-            <img
-              src={imagePreview}
-              alt="Preview"
-              className="w-20 h-20 object-cover rounded-lg border border-zinc-700"
-            />
-            <button
-              onClick={removeImage}
-              className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-base-300 flex items-center justify-center"
-              type="button"
-            >
-              <X className="size-3" />
-            </button>
+        <div className="mb-3">
+          <div className="chat chat-end">
+            <div className="chat-bubble relative">
+              <img
+                src={imagePreview}
+                alt="Preview"
+                className="w-20 h-20 object-cover rounded-lg border border-base-300"
+              />
+              <button
+                onClick={removeImage}
+                className="absolute -top-1 -right-1 btn btn-xs btn-ghost text-red-500"
+                type="button"
+              >
+                <Trash2 size={18} />
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Preview for Location */}
+      {/* Location Preview */}
       {location && (
-        <div className="mb-3 flex items-center gap-2 p-2 border rounded-lg bg-gray-100">
-          <MapPin size={20} className="text-blue-500" />
-          <div className="text-sm">
-            Shared Location: {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}
+        <div className="mb-3">
+          <div className="chat chat-end">
+            <div className="chat-bubble flex items-center gap-2">
+              <MapPin size={20} className="text-blue-600" />
+              <p className="text-sm">
+                Shared Location: {location.latitude.toFixed(4)}, {location.longitude.toFixed(4)}
+              </p>
+              <button
+                onClick={removeLocation}
+                className="ml-auto btn btn-xs btn-ghost text-red-500"
+                type="button"
+              >
+                <Trash2 size={18} />
+              </button>
+            </div>
           </div>
-          <button
-            onClick={removeLocation}
-            className="ml-2 text-red-500"
-            type="button"
-          >
-            <X size={16} />
-          </button>
+        </div>
+      )}
+
+      {/* Audio Preview */}
+      {audioUrl && (
+        <div className="mb-3">
+          <div className="chat chat-end">
+            <div className="chat-bubble flex items-center gap-2">
+              <audio controls src={audioUrl} className="max-w-xs" />
+              <button
+                onClick={removeAudio}
+                className="ml-auto btn btn-xs btn-ghost text-red-500"
+                type="button"
+              >
+                <Trash2 size={18} />
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -130,7 +231,6 @@ const MessageInput = () => {
             ref={fileInputRef}
             onChange={handleImageChange}
           />
-
           <button
             type="button"
             className={`hidden sm:flex btn btn-circle ${
@@ -140,7 +240,7 @@ const MessageInput = () => {
           >
             <Image size={20} />
           </button>
-          {/* New Location Button */}
+          {/* Location Button */}
           <button
             type="button"
             className="hidden sm:flex btn btn-circle text-zinc-400"
@@ -148,11 +248,29 @@ const MessageInput = () => {
           >
             <MapPin size={20} />
           </button>
+          {/* Audio Recording Button */}
+          {isRecording ? (
+            <button
+              type="button"
+              className="hidden sm:flex btn btn-circle text-red-500"
+              onClick={stopRecording}
+            >
+              <StopCircle size={20} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="hidden sm:flex btn btn-circle text-zinc-400"
+              onClick={startRecording}
+            >
+              <Mic size={20} />
+            </button>
+          )}
         </div>
         <button
           type="submit"
           className="btn btn-sm btn-circle"
-          disabled={!text.trim() && !imagePreview && !location}
+          disabled={!text.trim() && !imagePreview && !location && !audioBlob}
         >
           <Send size={22} />
         </button>

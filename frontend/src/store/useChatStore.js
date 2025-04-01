@@ -41,24 +41,31 @@ export const useChatStore = create((set, get) => ({
         `/messages/send/${selectedUser._id}`,
         messageData
       );
-      // Add the newly sent message to local state
+      // Append the newly sent message to the state
       set({ messages: [...messages, res.data] });
     } catch (error) {
       toast.error(error.response?.data?.message || "Failed to send message");
     }
   },
 
-  // 1) Subscribe with a specific userId
   subscribeToMessages: (userId) => {
     const socket = useAuthStore.getState().socket;
 
     socket.on("newMessage", (newMessage) => {
       console.log("New message event received:", newMessage);
-      // 2) If the new message is from the user that I'm currently chatting with
+      // Only add the message if it's for the current conversation
       if (newMessage.senderId !== userId) return;
-
       set((state) => ({
         messages: [...state.messages, newMessage],
+      }));
+    });
+
+    socket.on("receiptUpdated", (updatedMessage) => {
+      console.log("Receipt updated:", updatedMessage);
+      set((state) => ({
+        messages: state.messages.map((msg) =>
+          msg._id === updatedMessage._id ? updatedMessage : msg
+        ),
       }));
     });
   },
@@ -66,6 +73,7 @@ export const useChatStore = create((set, get) => ({
   unsubscribeFromMessages: () => {
     const socket = useAuthStore.getState().socket;
     socket.off("newMessage");
+    socket.off("receiptUpdated");
   },
 
   setSelectedUser: (selectedUser) => set({ selectedUser }),

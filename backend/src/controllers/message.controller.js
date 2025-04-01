@@ -37,7 +37,7 @@ export const getMessages = async (req, res) => {
 
 export const sendMessages = async (req, res) => {
   try {
-      const { text, image, location } = req.body; // location is now expected optionally
+      const { text, image, location ,audio} = req.body; // location is now expected optionally
       const { id: receiverId } = req.params;
       const senderId = req.user._id;
 
@@ -52,7 +52,8 @@ export const sendMessages = async (req, res) => {
           receiverId,
           text,
           image: imageUrl,
-          location: location || null, // include location if provided
+          location: location || null,
+          audio: audio || "",
       });
       await newMessage.save();
 

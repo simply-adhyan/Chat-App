@@ -4,13 +4,17 @@ import { Check, CheckCheck, MapPin } from "lucide-react";
 import { formatMessageTime } from "../lib/utils";
 
 const MessageItem = ({ message, authUser, selectedUser }) => {
-  // Defensive check to ensure message is defined
   if (!message) return null;
 
   const socket = useAuthStore((state) => state.socket);
   const messageRef = useRef(null);
 
-  // Only observe messages not sent by the current user and not already marked as seen
+  // Debug logging: print receipt timestamps
+  // useEffect(() => {
+  //   console.log("Message:", message._id, "deliveredAt:", message.deliveredAt, "seenAt:", message.seenAt);
+  // }, [message]);
+
+  // When the message is in view (if not sent by the current user and not seen), send the "seen" update
   useEffect(() => {
     if (message.senderId === authUser._id || message.seenAt) return;
     
@@ -28,17 +32,13 @@ const MessageItem = ({ message, authUser, selectedUser }) => {
       },
       { threshold: 0.5 }
     );
-
-    if (messageRef.current) {
-      observer.observe(messageRef.current);
-    }
-
+    if (messageRef.current) observer.observe(messageRef.current);
     return () => {
       if (messageRef.current) observer.unobserve(messageRef.current);
     };
   }, [message, authUser, socket]);
 
-  // Determine which icon to display for read receipts (only for messages sent by the current user)
+  // Determine the tick icon for messages sent by the current user
   let receiptIcon = null;
   if (message.senderId === authUser._id) {
     if (!message.deliveredAt) {
@@ -50,7 +50,7 @@ const MessageItem = ({ message, authUser, selectedUser }) => {
     }
   }
 
-  // If the message has location data, construct a Google Maps URL
+  // Build a Google Maps link if location exists
   const googleMapsLink = message.location
     ? `https://www.google.com/maps/search/?api=1&query=${message.location.latitude},${message.location.longitude}`
     : null;
@@ -63,24 +63,15 @@ const MessageItem = ({ message, authUser, selectedUser }) => {
       <div className="chat-image avatar">
         <div className="size-10 rounded-full border">
           <img
-            src={
-              message.senderId === authUser._id
-                ? authUser.profilePic || "/avatar.png"
-                : selectedUser.profilePic || "/avatar.png"
-            }
+            src={message.senderId === authUser._id ? authUser.profilePic || "/avatar.png" : selectedUser.profilePic || "/avatar.png"}
             alt="profile pic"
           />
         </div>
       </div>
-
       <div className="chat-header mb-1">
-        <time className="text-xs opacity-50 ml-1">
-          {formatMessageTime(message.createdAt)}
-        </time>
+        <time className="text-xs opacity-50 ml-1">{formatMessageTime(message.createdAt)}</time>
       </div>
-
-      <div className="chat-bubble flex flex-col relative">
-        {/* Render image if available */}
+      <div className="chat-bubble flex flex-col relative bg-base-200 p-3 rounded-lg">
         {message.image && (
           <img
             src={message.image}
@@ -88,13 +79,14 @@ const MessageItem = ({ message, authUser, selectedUser }) => {
             className="sm:max-w-[200px] rounded-md mb-2"
           />
         )}
-
-        {/* Render text if available */}
-        {message.text && <p>{message.text}</p>}
-
-        {/* Render location as a clickable Google Maps link */}
+        {message.text && <p className="text-sm text-base-content">{message.text}</p>}
+        {message.audio && (
+          <div className="mt-2">
+            <audio controls src={message.audio} className="max-w-xs" />
+          </div>
+        )}
         {message.location && (
-          <div className="mt-2 p-2 rounded-md bg-base-200 flex items-center gap-2">
+          <div className="mt-2 p-2 rounded-md bg-gray-100 flex items-center gap-2">
             <MapPin size={18} className="text-blue-600" />
             <a
               href={googleMapsLink}
@@ -108,12 +100,8 @@ const MessageItem = ({ message, authUser, selectedUser }) => {
             </a>
           </div>
         )}
-
-        {/* Render receipt icon for messages sent by the auth user */}
         {message.senderId === authUser._id && (
-          <div className="absolute bottom-1 right-1">
-            {receiptIcon}
-          </div>
+          <div className="absolute bottom-1 right-1">{receiptIcon}</div>
         )}
       </div>
     </div>

@@ -28,34 +28,30 @@ io.on("connection", (socket) => {
   // Emit online users list to all connected clients
   io.emit("getOnlineUsers", Object.keys(userSocketMap));
 
-  // Listen for read receipt updates from clients
   socket.on("updateReceipt", async ({ messageId, status }) => {
     try {
       let updateField = {};
-      // Determine which timestamp field to update based on status
-      switch (status) {
-        case "delivered":
-          updateField = { deliveredAt: new Date() };
-          break;
-        case "received":
-          updateField = { receivedAt: new Date() };
-          break;
-        case "seen":
+      if (status === "delivered") {
+        updateField = { deliveredAt: new Date() };
+      } else if (status === "seen") {
+        // Retrieve the message first to check deliveredAt
+        const message = await Message.findById(messageId);
+        if (!message.deliveredAt) {
+          updateField = { deliveredAt: new Date(), seenAt: new Date() };
+        } else {
           updateField = { seenAt: new Date() };
-          break;
-        default:
-          return; // Invalid status provided
+        }
+      } else {
+        return; // Invalid status
       }
-      
-      // Update the message in the database
+  
       const updatedMessage = await Message.findByIdAndUpdate(
         messageId,
         { $set: updateField },
         { new: true }
       );
-
+  
       if (updatedMessage) {
-        // Notify the sender of the update
         const senderSocketId = getReceiverSocketId(updatedMessage.senderId.toString());
         if (senderSocketId) {
           io.to(senderSocketId).emit("receiptUpdated", updatedMessage);
@@ -65,7 +61,8 @@ io.on("connection", (socket) => {
       console.error("Error updating receipt:", error);
     }
   });
-
+  
+  
   socket.on("disconnect", () => {
     console.log("A User Disconnected", socket.id);
     delete userSocketMap[userId];
