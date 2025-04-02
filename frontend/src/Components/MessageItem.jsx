@@ -9,11 +9,6 @@ const MessageItem = ({ message, authUser, selectedUser }) => {
   const socket = useAuthStore((state) => state.socket);
   const messageRef = useRef(null);
 
-  // Debug logging: print receipt timestamps
-  // useEffect(() => {
-  //   console.log("Message:", message._id, "deliveredAt:", message.deliveredAt, "seenAt:", message.seenAt);
-  // }, [message]);
-
   // When the message is in view (if not sent by the current user and not seen), send the "seen" update
   useEffect(() => {
     if (message.senderId === authUser._id || message.seenAt) return;
@@ -63,7 +58,11 @@ const MessageItem = ({ message, authUser, selectedUser }) => {
       <div className="chat-image avatar">
         <div className="size-10 rounded-full border">
           <img
-            src={message.senderId === authUser._id ? authUser.profilePic || "/avatar.png" : selectedUser.profilePic || "/avatar.png"}
+            src={
+              message.senderId === authUser._id
+                ? authUser.profilePic || "/avatar.png"
+                : selectedUser.profilePic || "/avatar.png"
+            }
             alt="profile pic"
           />
         </div>
@@ -79,7 +78,11 @@ const MessageItem = ({ message, authUser, selectedUser }) => {
             className="sm:max-w-[200px] rounded-md mb-2"
           />
         )}
-        {message.text && <p className="text-sm text-base-content">{message.text}</p>}
+        {message.text && (
+          <p className="text-sm text-base-content break-words">
+            {message.text}
+          </p>
+        )}
         {message.audio && (
           <div className="mt-2">
             <audio controls src={message.audio} className="max-w-xs" />
