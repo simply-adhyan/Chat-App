@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useAuthStore } from '../store/useAuthStore';
 import { MessageSquare, User, Mail, EyeOff, Eye, Loader2, Lock } from 'lucide-react';
 import { Link } from "react-router-dom";
@@ -11,17 +11,40 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5001/api/auth
 const SignupPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isOtpSent, setIsOtpSent] = useState(false);
-  const [otpToken, setOtpToken] = useState(null); // store the OTP JWT returned from backend
+  const [otpToken, setOtpToken] = useState(null);
   const [loadingSendOtp, setLoadingSendOtp] = useState(false);
   const [loadingVerifyOtp, setLoadingVerifyOtp] = useState(false);
   const [otp, setOtp] = useState(new Array(6).fill(''));
+  const [resendTimer, setResendTimer] = useState(0); 
+  const [isLoadingNextScreen, setIsLoadingNextScreen] = useState(false); 
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
     password: "",
   });
-  const { signup, isSigningUp } = useAuthStore();
+  const { signup } = useAuthStore();
 
+  // Refs for OTP inputs to handle auto-focus
+  const otpRefs = useRef([]);
+
+  // Countdown timer for the resend OTP cooldown
+  useEffect(() => {
+    let timer;
+    if (resendTimer > 0) {
+      timer = setInterval(() => {
+        setResendTimer(prev => {
+          if (prev <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => clearInterval(timer);
+  }, [resendTimer]);
+
+  // Validate form data
   const validateData = () => {
     if (!formData.fullName.trim()) {
       toast.error("Full name is required");
@@ -47,7 +70,7 @@ const SignupPage = () => {
     return true;
   };
 
-  // Sends OTP to the provided email and stores otpToken from backend
+  // Send OTP to provided email
   const handleSendOtp = async (e) => {
     e.preventDefault();
     if (!validateData()) return;
@@ -62,8 +85,11 @@ const SignupPage = () => {
       if (response.ok) {
         toast.success("OTP sent to your email!");
         setIsOtpSent(true);
-        // Save the otpToken returned from backend
         setOtpToken(data.otpToken);
+        setResendTimer(60);
+        // Reset OTP fields and focus on the first input
+        setOtp(new Array(6).fill(''));
+        otpRefs.current[0]?.focus();
       } else {
         toast.error(data.message || "Failed to send OTP. Please try again.");
       }
@@ -74,18 +100,31 @@ const SignupPage = () => {
     }
   };
 
-  // Handles OTP input changes and auto-focuses the next input
+  // Resend OTP if timer has expired
+  const handleResendOtp = async () => {
+    if (resendTimer > 0) return;
+    // Using a dummy event to mimic form submission
+    await handleSendOtp({ preventDefault: () => {} });
+  };
+
+  // Handle changes in OTP input fields
   const handleOtpChange = (element, index) => {
-    if (isNaN(element.value)) return;
+    const value = element.value;
+    // Allow only digits
+    if (!/^\d*$/.test(value)) return;
     const newOtp = [...otp];
-    newOtp[index] = element.value;
+    newOtp[index] = value;
     setOtp(newOtp);
-    if (element.value !== "" && element.nextSibling) {
-      element.nextSibling.focus();
+    if (value && index < otp.length - 1) {
+      otpRefs.current[index + 1]?.focus();
+    }
+    // If the user clears the input, move focus to previous input if available
+    if (!value && index > 0) {
+      otpRefs.current[index - 1]?.focus();
     }
   };
 
-  // Verifies the entered OTP along with the otpToken then proceeds with signup if valid
+  // Verify the OTP entered by the user
   const handleVerifyOtp = async (e) => {
     e.preventDefault();
     const enteredOtp = otp.join('');
@@ -100,16 +139,20 @@ const SignupPage = () => {
       const response = await fetch(`${API_BASE}/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          email: formData.email, 
-          otp: enteredOtp, 
-          otpToken 
-        }),
+        body: JSON.stringify({ email: formData.email, otp: enteredOtp, otpToken }),
       });
       const data = await response.json();
       if (response.ok) {
         toast.success("OTP verified successfully!");
-        signupUser();
+        setIsLoadingNextScreen(true);
+        // After a short delay, call the signup function with OTP details
+        setTimeout(() => {
+          signup({
+            ...formData,
+            otp: enteredOtp,       // include the 6-digit OTP
+            otpToken: otpToken,    // include the otpToken
+          });
+        }, 2500);
       } else {
         toast.error(data.message || "Invalid OTP. Please try again.");
       }
@@ -120,10 +163,16 @@ const SignupPage = () => {
     }
   };
 
-  // Calls the signup function from the auth store
-  const signupUser = async () => {
-    signup(formData);
-  };
+  if (isLoadingNextScreen) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-12 h-12 animate-spin text-primary" />
+          <p className="mt-4 text-lg font-medium">Preparing your account...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen grid lg:grid-cols-2">
@@ -132,8 +181,8 @@ const SignupPage = () => {
         <div className="w-full max-w-md space-y-8">
           <div className="text-center mb-8">
             <div className="flex flex-col items-center gap-2 group">
-              <div className="size-12 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
-                <MessageSquare className="size-6 text-primary" />
+              <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center group-hover:bg-primary/20 transition-colors">
+                <MessageSquare className="w-6 h-6 text-primary" />
               </div>
               <h1 className="text-2xl font-bold mt-2">Create Account</h1>
               <p className="text-base-content/60">Get Started with your free account</p>
@@ -149,7 +198,7 @@ const SignupPage = () => {
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <User className="size-5 text-base-content/40" />
+                    <User className="w-5 h-5 text-base-content/40" />
                   </div>
                   <input
                     type="text"
@@ -168,7 +217,7 @@ const SignupPage = () => {
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Mail className="size-5 text-base-content/40" />
+                    <Mail className="w-5 h-5 text-base-content/40" />
                   </div>
                   <input
                     type="email"
@@ -187,7 +236,7 @@ const SignupPage = () => {
                 </label>
                 <div className="relative">
                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <Lock className="size-5 text-base-content/40" />
+                    <Lock className="w-5 h-5 text-base-content/40" />
                   </div>
                   <input
                     type={showPassword ? 'text' : 'password'}
@@ -203,9 +252,9 @@ const SignupPage = () => {
                     onClick={() => setShowPassword(!showPassword)}
                   >
                     {showPassword ? (
-                      <EyeOff className="size-5 text-base-content/40" />
+                      <EyeOff className="w-5 h-5 text-base-content/40" />
                     ) : (
-                      <Eye className="size-5 text-base-content/40" />
+                      <Eye className="w-5 h-5 text-base-content/40" />
                     )}
                   </button>
                 </div>
@@ -213,7 +262,7 @@ const SignupPage = () => {
               <button type="submit" className="btn btn-primary w-full hover:translate-y-2" disabled={loadingSendOtp}>
                 {loadingSendOtp ? (
                   <>
-                    <Loader2 className="size-5 animate-spin mr-2" />
+                    <Loader2 className="w-5 h-5 animate-spin mr-2" />
                     Sending OTP...
                   </>
                 ) : (
@@ -233,31 +282,44 @@ const SignupPage = () => {
             <form onSubmit={handleVerifyOtp} className="space-y-6">
               <div className="text-center">
                 <h2 className="text-2xl font-bold">Enter OTP</h2>
-                <p className="text-base-content/60">A 6‑digit OTP has been sent to {formData.email}</p>
+                <p className="text-base-content/60">
+                  A 6‑digit OTP has been sent to {formData.email}
+                </p>
               </div>
               <div className="flex justify-center space-x-2">
                 {otp.map((data, index) => (
                   <input
                     key={index}
                     type="text"
-                    className="input input-bordered w-12 text-center"
+                    className="input input-bordered w-12 h-12 text-center transition duration-200 ease-in-out"
                     maxLength={1}
                     value={data}
+                    ref={el => otpRefs.current[index] = el}
                     onChange={(e) => handleOtpChange(e.target, index)}
                     onFocus={(e) => e.target.select()}
                   />
                 ))}
               </div>
-              <button type="submit" className="btn btn-primary w-full hover:translate-y-2" disabled={loadingVerifyOtp}>
-                {loadingVerifyOtp ? (
-                  <>
-                    <Loader2 className="size-5 animate-spin mr-2" />
-                    Verifying OTP...
-                  </>
-                ) : (
-                  "Verify OTP & Signup"
-                )}
-              </button>
+              <div className="flex justify-between items-center">
+                <button type="submit" className="btn btn-primary mt-4 hover:translate-y-2" disabled={loadingVerifyOtp}>
+                  {loadingVerifyOtp ? (
+                    <>
+                      <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                      Verifying OTP...
+                    </>
+                  ) : (
+                    "Verify OTP & Signup"
+                  )}
+                </button>
+                <button 
+                  type="button" 
+                  className="btn btn-secondary mt-4 ml-4"
+                  onClick={handleResendOtp}
+                  disabled={resendTimer > 0}
+                >
+                  {resendTimer > 0 ? `Resend OTP in ${resendTimer}s` : "Resend OTP"}
+                </button>
+              </div>
             </form>
           )}
         </div>
