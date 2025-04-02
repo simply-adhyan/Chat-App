@@ -4,9 +4,7 @@ import { MessageSquare, User, Mail, EyeOff, Eye, Loader2, Lock } from 'lucide-re
 import { Link } from "react-router-dom";
 import AuthImagePattern from '../Components/AuthImagePattern';
 import toast from 'react-hot-toast';
-
-// Base URL for your API (from environment variables or fallback)
-const API_BASE = import.meta.env.MODE == "development" ? "http://localhost:5001/api/auth" : "/auth";
+import { axiosInstance } from "../lib/axios";
 
 const SignupPage = () => {
   const [showPassword, setShowPassword] = useState(false);
@@ -70,31 +68,24 @@ const SignupPage = () => {
     return true;
   };
 
-  // Send OTP to provided email
+  // Send OTP to provided email using axiosInstance
   const handleSendOtp = async (e) => {
     e.preventDefault();
     if (!validateData()) return;
     setLoadingSendOtp(true);
     try {
-      const response = await fetch(`${API_BASE}/send-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: formData.email }),
+      const { data } = await axiosInstance.post("/auth/send-otp", {
+        email: formData.email
       });
-      const data = await response.json();
-      if (response.ok) {
-        toast.success("OTP sent to your email!");
-        setIsOtpSent(true);
-        setOtpToken(data.otpToken);
-        setResendTimer(60);
-        // Reset OTP fields and focus on the first input
-        setOtp(new Array(6).fill(''));
-        otpRefs.current[0]?.focus();
-      } else {
-        toast.error(data.message || "Failed to send OTP. Please try again.");
-      }
+      toast.success("OTP sent to your email!");
+      setIsOtpSent(true);
+      setOtpToken(data.otpToken);
+      setResendTimer(60);
+      // Reset OTP fields and focus on the first input
+      setOtp(new Array(6).fill(''));
+      otpRefs.current[0]?.focus();
     } catch (error) {
-      toast.error("Error sending OTP. Please try again.");
+      toast.error(error?.response?.data?.message || "Failed to send OTP. Please try again.");
     } finally {
       setLoadingSendOtp(false);
     }
@@ -103,7 +94,7 @@ const SignupPage = () => {
   // Resend OTP if timer has expired
   const handleResendOtp = async () => {
     if (resendTimer > 0) return;
-    // Using a dummy event to mimic form submission
+    // Create a dummy event to mimic form submission
     await handleSendOtp({ preventDefault: () => {} });
   };
 
@@ -124,7 +115,7 @@ const SignupPage = () => {
     }
   };
 
-  // Verify the OTP entered by the user
+  // Verify the OTP entered by the user using axiosInstance
   const handleVerifyOtp = async (e) => {
     e.preventDefault();
     const enteredOtp = otp.join('');
@@ -136,28 +127,23 @@ const SignupPage = () => {
     }
     setLoadingVerifyOtp(true);
     try {
-      const response = await fetch(`${API_BASE}/verify-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: formData.email, otp: enteredOtp, otpToken }),
+      const { data } = await axiosInstance.post("/auth/verify-otp", {
+        email: formData.email,
+        otp: enteredOtp,
+        otpToken
       });
-      const data = await response.json();
-      if (response.ok) {
-        toast.success("OTP verified successfully!");
-        setIsLoadingNextScreen(true);
-        // After a short delay, call the signup function with OTP details
-        setTimeout(() => {
-          signup({
-            ...formData,
-            otp: enteredOtp,       // include the 6-digit OTP
-            otpToken: otpToken,    // include the otpToken
-          });
-        }, 2500);
-      } else {
-        toast.error(data.message || "Invalid OTP. Please try again.");
-      }
+      toast.success("OTP verified successfully!");
+      setIsLoadingNextScreen(true);
+      // After a short delay, call the signup function with OTP details
+      setTimeout(() => {
+        signup({
+          ...formData,
+          otp: enteredOtp,       // include the 6-digit OTP
+          otpToken: otpToken,    // include the otpToken
+        });
+      }, 2500);
     } catch (error) {
-      toast.error("Error verifying OTP. Please try again.");
+      toast.error(error?.response?.data?.message || "Invalid OTP. Please try again.");
     } finally {
       setLoadingVerifyOtp(false);
     }
