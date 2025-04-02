@@ -6,7 +6,7 @@ import AuthImagePattern from '../Components/AuthImagePattern';
 import toast from 'react-hot-toast';
 
 // Base URL for your API (from environment variables or fallback)
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5001/api/auth';
+const API_BASE = import.meta.env.MODE == "development" ? "http://localhost:5001/api/auth" : "/auth";
 
 const SignupPage = () => {
   const [showPassword, setShowPassword] = useState(false);
