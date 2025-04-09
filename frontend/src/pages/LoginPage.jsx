@@ -91,7 +91,8 @@ const LoginPage = () => {
                   <Lock className="h-5 w-5 text-base-content/40" />
                 </div>
                 <input
-                  type={showPassword ? "text" : "current-password"}
+                  type={showPassword ? "text" : "password"}
+                  autoComplete="current-password"
                   id="password"
                   className={`input input-bordered w-full pl-10 transition-all duration-300 focus:ring-2 focus:ring-primary ${
                     errors.password ? "border-red-500 focus:ring-red-500" : ""
